@@ -1,6 +1,7 @@
 TOOLSET = arm-none-eabi
 CC := $(TOOLSET)-gcc
 AS := $(TOOLSET)-as
+AR := $(TOOLSET)-ar
 GDB := $(TOOLSET)-gdb
 SIZE := $(TOOLSET)-size
 OBJCOPY := $(TOOLSET)-objcopy
@@ -23,6 +24,9 @@ ARMCMSISINC := $(ARMCMSISDIR)/Include
 BSPDIR := $(BASECMSISDIR)/stm32g4xx-nucleo-bsp
 CMSISMODULES := $(STMHALDIR) $(STMCMSISDIR) $(BSPDIR) $(BASECMSISDIR)/CMSIS_6
 
+ST7789LIBDIR := $(LIBDIR)/st7789_generic
+ST7789LIBINC := $(ST7789LIBDIR)/inc
+
 COMMON_CFLAGS = -Wall -Wextra -std=c11 -g3 -Os
 CMSIS_CPPFLAGS := -DUSE_HAL_DRIVER -DUSE_NUCLEO_32 -DSTM32G431xx
 CMSIS_CPPFLAGS += -I $(STMHALINC) -I $(STMCMSISINC) -I $(ARMCMSISINC) -I $(BSPDIR)
@@ -31,7 +35,7 @@ CPUFLAGS = -mcpu=cortex-m4 -mthumb
 FPUFLAGS = -mfloat-abi=hard -mfpu=fpv4-sp-d16
 
 AFLAGS := -D --warn $(CPUFLAGS) -g
-CPPFLAGS := -I $(INCDIR) $(CMSIS_CPPFLAGS)
+CPPFLAGS := -I $(INCDIR) $(CMSIS_CPPFLAGS) -I $(ST7789LIBINC)
 CFLAGS := $(CPUFLAGS) $(FPUFLAGS) $(COMMON_CFLAGS) -ffunction-sections -fdata-sections
 LDSCRIPT := STM32G431KBTX_FLASH.ld
 LDFLAGS := -T $(LDSCRIPT) -Wl,--start-group -lc -lgcc -lnosys -Wl,--end-group
@@ -51,9 +55,13 @@ STMHALSRCS += $(STMHALDIR)/Src/stm32g4xx_hal_cortex.c
 STMHALSRCS += $(STMHALDIR)/Src/stm32g4xx_hal_gpio.c
 STMHALOBJS := $(STMHALSRCS:%.c=$(OBJDIR)/%.o)
 
+ST7789LIBSRCS := $(wildcard $(ST7789LIBDIR)/src/*.c)
+ST7789LIBOBJS := $(ST7789LIBSRCS:%.c=$(OBJDIR)/%.o)
+
 TARGET = stm32g4_main
-SPITESTTARGET = spi_tests
-ST7789TESTTARGET = st7789_tests
+ST7789LIBTARGET = lib_st7789_generic
+SPILIBTESTTARGET = spi_tests
+ST7789LIBTESTTARGET = st7789_tests
 
 TESTCC := gcc
 TESTSIZE := size
@@ -62,22 +70,24 @@ TESTDIR = tests
 MOCKLIBDIR = lib/fff
 TESTLIBDIR = lib/greatest
 TESTOBJDIR := $(OBJDIR)/$(TESTDIR)
-TESTCPPFLAGS := -I $(INCDIR) -I $(TESTLIBDIR) -I $(TESTDIR) -I $(MOCKLIBDIR)
+ST7789LIBTESTDIR := $(ST7789LIBDIR)/tests
+TESTCPPFLAGS := -I $(INCDIR) -I $(TESTLIBDIR) -I $(TESTDIR) -I $(MOCKLIBDIR) -I $(ST7789LIBINC)
 TESTCFLAGS := $(COMMON_CFLAGS) $(CMSIS_CPPFLAGS)
 
-SPI_TESTSRCS := $(TESTDIR)/spi_suite.c $(TESTDIR)/spi_main.c
-SPI_TESTSRCS += $(SRCDIR)/spi.c
-SPI_TESTOBJS := $(SPI_TESTSRCS:%.c=$(TESTOBJDIR)/%.o)
+SPILIBTESTSRCS := $(ST7789LIBTESTDIR)/spi_suite.c $(ST7789LIBTESTDIR)/spi_main.c
+SPILIBTESTSRCS += $(ST7789LIBDIR)/$(SRCDIR)/spi.c
+SPILIBTESTOBJS := $(SPILIBTESTSRCS:%.c=$(TESTOBJDIR)/%.o)
 
-ST7789_TESTSRCS := $(TESTDIR)/st7789_suite.c $(TESTDIR)/st7789_main.c
-ST7789_TESTSRCS += $(SRCDIR)/st7789.c
-ST7789_TESTOBJS := $(ST7789_TESTSRCS:%.c=$(TESTOBJDIR)/%.o)
+ST7789LIBTESTSRCS := $(ST7789LIBTESTDIR)/st7789_suite.c $(ST7789LIBTESTDIR)/st7789_main.c
+ST7789LIBTESTSRCS += $(ST7789LIBDIR)/$(SRCDIR)/st7789.c
+ST7789LIBTESTOBJS := $(ST7789LIBTESTSRCS:%.c=$(TESTOBJDIR)/%.o)
 
 
 .PHONY: all clean tests srcdepdir cmsis_modules_git_update test_modules_git_update \
 flash-erase flash-write flash-backup
-all: $(TARGET).elf $(TARGET).bin
-tests: $(SPITESTTARGET).elf $(ST7789TESTTARGET).elf
+all: $(TARGET).elf $(TARGET).bin $(ST7789LIBTARGET).a
+tests: $(SPILIBTESTTARGET).elf $(ST7789LIBTESTTARGET).elf
+
 
 flash-backup:
 	$(FLASH) read BIN_BACKUP.bin 0x08000000 0x20000
@@ -88,6 +98,16 @@ flash-write: $(TARGET).bin
 flash-erase:
 	$(FLASH) erase
 
+
+$(ST7789LIBTARGET).a: $(ST7789LIBOBJS)
+	@echo "Creating static st7789 library"
+	$(AR) rcs $@ $^
+	$(SIZE) $@
+
+$(OBJDIR)/$(ST7789LIBDIR)/%.o: $(ST7789LIBDIR)/%.c
+	@echo "Creating st7789 library objects"
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 $(SYSOBJ): $(SYSFILE)
 	@echo "Creating system object"
@@ -117,7 +137,7 @@ $(TARGET).bin: $(TARGET).elf
 	@echo "Creating binary image"
 	$(OBJCOPY) -O binary $^ $@
 
-$(TARGET).elf: $(SRCOBJS) $(STARTUPOBJ) $(SYSOBJ) $(STMHALOBJS) | cmsis_modules_git_update
+$(TARGET).elf: $(SRCOBJS) $(STARTUPOBJ) $(SYSOBJ) $(STMHALOBJS) $(ST7789LIBTARGET).a | cmsis_modules_git_update
 	@echo "Linking objects"
 	$(CC) $(LDFLAGS) $(LDLIBS) $(CPUFLAGS) $(FPUFLAGS) $^ -o $@
 	$(SIZE) $@
@@ -137,12 +157,12 @@ test_modules_git_update:
 	git submodule update --init --remote $(LIBDIR)/greatest $(LIBDIR)/fff
 
 # Unit test builds
-$(SPITESTTARGET).elf: $(SPI_TESTOBJS) | test_modules_git_update
+$(SPILIBTESTTARGET).elf: $(SPILIBTESTOBJS) | test_modules_git_update
 	@echo "Linking test objects"
 	$(TESTCC) $(TESTLDFLAGS) $(TESTLDLIBS) $^ -o $@
 	$(TESTSIZE) $@
 
-$(ST7789TESTTARGET).elf: $(ST7789_TESTOBJS) | test_modules_git_update
+$(ST7789LIBTESTTARGET).elf: $(ST7789LIBTESTOBJS) | test_modules_git_update
 	@echo "Linking test objects"
 	$(TESTCC) $(TESTLDFLAGS) $(TESTLDLIBS) $^ -o $@
 	$(TESTSIZE) $@
@@ -155,7 +175,7 @@ $(TESTOBJDIR)/%.o: %.c
 
 clean:
 	@echo "Cleaning build"
-	-$(RM) $(TARGET).{elf,bin} $(SPITESTTARGET).elf $(ST7789TESTTARGET).elf:
+	-$(RM) $(TARGET).{elf,bin} $(ST7789LIBTARGET).a $(SPILIBTESTTARGET).elf $(ST7789LIBTESTTARGET).elf
 	-$(RM) -rf $(OBJDIR) $(DEPDIR)
 
 -include $(wildcard $(SRCDEPS))

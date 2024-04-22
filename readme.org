@@ -13,6 +13,7 @@ The following tools are needed to build this project
 - [[https://github.com/STMicroelectronics/stm32g4xx-nucleo-bsp][STM32G4xx Nucleo BSP]]
 - [[https://github.com/STMicroelectronics/stm32g4xx_hal_driver][STM32G4 HAL]]
 - [[https://github.com/STMicroelectronics/cmsis_device_g4][CMSIS G4]] CMSIS device library
+- [[https://github.com/jc-SpaceXp/ST7789-Generic][ST7789 Library]]
 - [[https://github.com/silentbicycle/greatest][Greatest]] C test framework
 - [[https://github.com/meekrosoft/fff][FFF]] C mocking library
 

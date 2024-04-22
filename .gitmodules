@@ -16,3 +16,6 @@
 [submodule "lib/fff"]
 	path = lib/fff
 	url = https://github.com/meekrosoft/fff
+[submodule "lib/st7789_generic"]
+	path = lib/st7789_generic
+	url = https://github.com/jc-SpaceXp/ST7789-Generic
